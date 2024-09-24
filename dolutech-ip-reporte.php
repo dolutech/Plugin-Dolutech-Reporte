@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: Dolutech IP Reporte
-Description: Plugin para realizar reportes em massa de IPs para a AbuseIPDB.
-Version: 0.0.1
+Description: Plugin para realizar reportes em massa de IPs para a AbuseIPDB e solicitar listas negras personalizadas.
+Version: 0.0.2
 Author: Lucas Catão de Moraes
 Author URI: https://dolutech.com
 Requires PHP: 7.4
@@ -19,7 +19,7 @@ class Dolutech_IP_Reporte {
 
     private $api_key_option = 'dolutech_ip_reporte_api_key';
     private $site_url = 'https://dolutech.com'; // Seu site
-    const API_VERSION = '0.0.1';
+    const API_VERSION = '0.0.2';
 
     public function __construct() {
         // Hooks para adicionar páginas ao menu do admin
@@ -28,8 +28,11 @@ class Dolutech_IP_Reporte {
         // Hooks para registrar configurações
         add_action('admin_init', array($this, 'register_settings'));
 
-        // Hooks para processar o formulário via admin_post
+        // Hooks para processar o formulário de reporte via admin_post
         add_action('admin_post_dolutech_ip_reporte_submit', array($this, 'handle_form_submission'));
+
+        // Hooks para processar o formulário de blacklist via admin_post
+        add_action('admin_post_dolutech_ip_reporte_blacklist_submit', array($this, 'handle_blacklist_request'));
     }
 
     // Adiciona páginas ao menu administrativo
@@ -51,6 +54,15 @@ class Dolutech_IP_Reporte {
             'manage_options',
             'dolutech-ip-reporte',
             array($this, 'report_page')
+        );
+
+        add_submenu_page(
+            'dolutech-ip-reporte',
+            'Solicitar Blacklist',
+            'Solicitar Blacklist',
+            'manage_options',
+            'dolutech-ip-reporte-blacklist',
+            array($this, 'blacklist_page')
         );
 
         add_submenu_page(
@@ -113,7 +125,7 @@ class Dolutech_IP_Reporte {
                     <tr valign="top">
                         <th scope="row"><label for="ips">Lista de IPs</label></th>
                         <td>
-                            <textarea id="ips" name="ips" rows="10" cols="50" class="large-text" placeholder="Insira um IP por linha" required></textarea>
+                            <textarea id="ips" name="ips" rows="10" cols="50" class="large-text" placeholder="Insira um IP por linha" required><?php echo isset($_GET['ips']) ? esc_textarea($_GET['ips']) : ''; ?></textarea>
                             <p class="description">Insira um IP por linha para realizar o reporte em massa.</p>
                         </td>
                     </tr>
@@ -123,7 +135,7 @@ class Dolutech_IP_Reporte {
                         <td>
                             <?php foreach ($motivos_list as $motivo): ?>
                                 <label>
-                                    <input type="checkbox" name="motivos[]" value="<?php echo esc_attr($motivo['ID']); ?>" />
+                                    <input type="checkbox" name="motivos[]" value="<?php echo esc_attr($motivo['ID']); ?>" <?php echo (isset($_GET['motivos']) && in_array($motivo['ID'], explode(',', $_GET['motivos']))) ? 'checked' : ''; ?> />
                                     <?php echo esc_html($motivo['Title']); ?>
                                 </label><br/>
                             <?php endforeach; ?>
@@ -134,13 +146,66 @@ class Dolutech_IP_Reporte {
                     <tr valign="top">
                         <th scope="row"><label for="comentario">Comentário</label></th>
                         <td>
-                            <textarea id="comentario" name="comentario" rows="5" cols="50" class="large-text" placeholder="Adicione um comentário opcional para o reporte."></textarea>
+                            <textarea id="comentario" name="comentario" rows="5" cols="50" class="large-text" placeholder="Adicione um comentário opcional para o reporte."><?php echo isset($_GET['comentario']) ? esc_textarea($_GET['comentario']) : ''; ?></textarea>
                             <p class="description">Adicione um comentário opcional para o reporte.</p>
                         </td>
                     </tr>
                 </table>
 
                 <?php submit_button('Enviar Reporte', 'primary', 'dolutech_ip_reporte_submit'); ?>
+            </form>
+        </div>
+
+        <?php
+    }
+
+    // Página de Solicitar Blacklist
+    public function blacklist_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        // Captura mensagens de sucesso ou erro via query parameters
+        $error = isset($_GET['error']) ? sanitize_text_field($_GET['error']) : '';
+        $generated_at = isset($_GET['generated_at']) ? sanitize_text_field($_GET['generated_at']) : '';
+
+        if (!empty($error)) {
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($error) . '</p></div>';
+        }
+
+        if (!empty($generated_at)) {
+            echo '<div class="notice notice-success is-dismissible"><p>Lista negra gerada em: ' . esc_html($generated_at) . '. O download foi iniciado automaticamente.</p></div>';
+        }
+
+        ?>
+
+        <div class="wrap">
+            <h1>Solicitar Blacklist</h1>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <?php
+                // Campos ocultos para o admin_post
+                wp_nonce_field('dolutech_ip_reporte_blacklist_action', 'dolutech_ip_reporte_blacklist_nonce');
+                ?>
+                <input type="hidden" name="action" value="dolutech_ip_reporte_blacklist_submit">
+                <table class="form-table">
+                    <tr valign="top">
+                        <th scope="row"><label for="confidenceMinimum">Confiança Mínima (%)</label></th>
+                        <td>
+                            <input type="number" id="confidenceMinimum" name="confidenceMinimum" value="90" min="1" max="100" required />
+                            <p class="description">Escolha a pontuação de confiança mínima para os IPs na lista negra (1-100).</p>
+                        </td>
+                    </tr>
+
+                    <tr valign="top">
+                        <th scope="row"><label for="limit">Número de IPs</label></th>
+                        <td>
+                            <input type="number" id="limit" name="limit" value="10000" min="1" max="10000" required />
+                            <p class="description">Escolha o número de IPs para incluir na lista negra (1-10.000).</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <?php submit_button('Gerar Lista Negra', 'primary', 'dolutech_ip_reporte_blacklist_submit'); ?>
             </form>
         </div>
 
@@ -223,7 +288,7 @@ class Dolutech_IP_Reporte {
                 'Key' => $api_key,
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
-                'User-Agent' => 'Dolutech-IP-Reporte/0.0.1 ' . $this->site_url
+                'User-Agent' => 'Dolutech-IP-Reporte/' . self::API_VERSION . ' ' . $this->site_url
             ),
             'timeout' => 60
         );
@@ -268,6 +333,107 @@ class Dolutech_IP_Reporte {
         }
     }
 
+    // Envia a solicitação de blacklist para a AbuseIPDB e fornece o download do arquivo .txt
+    public function handle_blacklist_request() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Acesso negado.');
+        }
+
+        // Verifica nonce para segurança
+        if (!isset($_POST['dolutech_ip_reporte_blacklist_nonce']) || !wp_verify_nonce($_POST['dolutech_ip_reporte_blacklist_nonce'], 'dolutech_ip_reporte_blacklist_action')) {
+            wp_die('Erro de verificação de segurança. Tente novamente.');
+        }
+
+        // Sanitiza e valida os dados
+        $confidence_minimum = isset($_POST['confidenceMinimum']) ? intval($_POST['confidenceMinimum']) : 0;
+        $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 0;
+
+        // Valida 'confidenceMinimum'
+        if ($confidence_minimum < 1 || $confidence_minimum > 100) {
+            wp_redirect(add_query_arg(array('error' => 'conf_min_invalid'), admin_url('admin.php?page=dolutech-ip-reporte-blacklist')));
+            exit;
+        }
+
+        // Valida 'limit'
+        if ($limit < 1 || $limit > 10000) {
+            wp_redirect(add_query_arg(array('error' => 'limit_invalid'), admin_url('admin.php?page=dolutech-ip-reporte-blacklist')));
+            exit;
+        }
+
+        // Obtém a chave de API
+        $api_key = get_option($this->api_key_option);
+        if (empty($api_key)) {
+            wp_redirect(add_query_arg(array('error' => 'sem_api_key'), admin_url('admin.php?page=dolutech-ip-reporte-blacklist')));
+            exit;
+        }
+
+        // Faz a requisição para a API da AbuseIPDB
+        $endpoint = 'https://api.abuseipdb.com/api/v2/blacklist';
+
+        $params = array(
+            'confidenceMinimum' => $confidence_minimum,
+            'limit' => $limit
+        );
+
+        $args = array(
+            'headers' => array(
+                'Key' => $api_key,
+                'Accept' => 'text/plain',
+                'User-Agent' => 'Dolutech-IP-Reporte/' . self::API_VERSION . ' ' . $this->site_url
+            ),
+            'body' => $params,
+            'timeout' => 60
+        );
+
+        $response = wp_remote_get(add_query_arg($params, $endpoint), $args);
+
+        if (is_wp_error($response)) {
+            // Opcional: Registrar no log de depuração do WordPress
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Dolutech IP Reporte - Erro na requisição da blacklist: ' . $response->get_error_message());
+            }
+            wp_redirect(add_query_arg(array('error' => 'api_request_failed'), admin_url('admin.php?page=dolutech-ip-reporte-blacklist')));
+            exit;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        if ($code === 200) {
+            // Define os headers para download do arquivo .txt
+            header('Content-Description: File Transfer');
+            header('Content-Type: text/plain');
+            header('Content-Disposition: attachment; filename=blacklist_' . time() . '.txt');
+            header('Content-Length: ' . strlen($body));
+            header('Pragma: public');
+
+            // Envia o conteúdo do arquivo
+            echo $body;
+            exit;
+        } else {
+            // Tenta decodificar a resposta como JSON para capturar mensagens de erro
+            $result = json_decode($body, true);
+            if (isset($result['errors']) && is_array($result['errors'])) {
+                $error_messages = array_map(function($error) {
+                    return isset($error['detail']) ? $error['detail'] : (isset($error['message']) ? $error['message'] : 'Erro desconhecido.');
+                }, $result['errors']);
+                $message = implode('; ', $error_messages);
+            } else {
+                $message = 'Erro desconhecido. Código HTTP: ' . $code;
+            }
+
+            // Opcional: Registrar no log de depuração do WordPress
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Dolutech IP Reporte - Erro na resposta da API da blacklist: ' . $message);
+                error_log('Dolutech IP Reporte - Código HTTP: ' . $code);
+                error_log('Dolutech IP Reporte - Corpo da Resposta: ' . $body);
+            }
+
+            wp_redirect(add_query_arg(array('error' => urlencode($message)), admin_url('admin.php?page=dolutech-ip-reporte-blacklist')));
+            exit;
+        }
+    }
+
     // Processa o formulário de reporte via admin_post
     public function handle_form_submission() {
         if (!current_user_can('manage_options')) {
@@ -276,8 +442,7 @@ class Dolutech_IP_Reporte {
 
         // Verifica nonce para segurança
         if (!isset($_POST['dolutech_ip_reporte_nonce']) || !wp_verify_nonce($_POST['dolutech_ip_reporte_nonce'], 'dolutech_ip_reporte_action')) {
-            wp_redirect(add_query_arg(array('error' => 'nonce_invalido'), admin_url('admin.php?page=dolutech-ip-reporte')));
-            exit;
+            wp_die('Erro de verificação de segurança. Tente novamente.');
         }
 
         // Sanitiza e valida os dados
@@ -299,21 +464,32 @@ class Dolutech_IP_Reporte {
         if (!empty($invalid_ips)) {
             wp_redirect(add_query_arg(array(
                 'error' => 'ips_invalidos',
-                'invalid_ips' => urlencode(json_encode($invalid_ips))
+                'invalid_ips' => urlencode(json_encode($invalid_ips)),
+                'motivos' => urlencode(implode(',', $motivos)),
+                'comentario' => urlencode($comentario)
             ), admin_url('admin.php?page=dolutech-ip-reporte')));
             exit;
         }
 
         // Verifica se pelo menos um motivo foi selecionado
         if (empty($motivos)) {
-            wp_redirect(add_query_arg(array('error' => 'sem_motivos'), admin_url('admin.php?page=dolutech-ip-reporte')));
+            wp_redirect(add_query_arg(array(
+                'error' => 'sem_motivos',
+                'ips' => urlencode($ips_input),
+                'comentario' => urlencode($comentario)
+            ), admin_url('admin.php?page=dolutech-ip-reporte')));
             exit;
         }
 
         // Obtém a chave de API
         $api_key = get_option($this->api_key_option);
         if (empty($api_key)) {
-            wp_redirect(add_query_arg(array('error' => 'sem_api_key'), admin_url('admin.php?page=dolutech-ip-reporte')));
+            wp_redirect(add_query_arg(array(
+                'error' => 'sem_api_key',
+                'ips' => urlencode($ips_input),
+                'motivos' => urlencode(implode(',', $motivos)),
+                'comentario' => urlencode($comentario)
+            ), admin_url('admin.php?page=dolutech-ip-reporte')));
             exit;
         }
 
