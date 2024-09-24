@@ -36,7 +36,7 @@ O plugin permite que administradores de sites WordPress possam reportar atividad
 
 1. Clone este repositório ou faça o download do arquivo ZIP:
     ```bash
-    git clone https://github.com/seu-usuario/dolutech-ip-reporte.git
+    https://github.com/seu-usuario/dolutech-ip-reporte.git](https://github.com/dolutech/Plugin-Dolutech-Reporte/blob/main/Dolutech%20IP%20Reporte.zip
     ```
 2. Faça o upload da pasta `dolutech-ip-reporte` para o diretório `/wp-content/plugins/` do seu servidor WordPress.
 3. No painel de administração do WordPress, vá para **Plugins > Plugins Instalados** e ative o plugin.
